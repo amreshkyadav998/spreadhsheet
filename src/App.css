@@ -31,7 +31,8 @@ button.link:hover { text-decoration: underline; }
 /* ── Grid ── */
 .grid-scroller { position: relative; flex: 1; overflow: auto; outline: none; background: #fff; contain: strict; }
 .grid-canvas { position: relative; }
-.pane { position: sticky; overflow: hidden; background: #fff; }
+/* clip, not hidden: hidden would make pane-top a scroll container and break the nested sticky corner */
+.pane { position: sticky; overflow: clip; background: #fff; }
 .pane-top { top: 0; z-index: 3; }
 .pane-corner { left: 0; z-index: 4; }
 .pane-left { left: 0; z-index: 2; }
