@@ -4,7 +4,7 @@
 // app itself; see DESIGN_NOTES.md → Measurements.
 import { readFileSync } from 'node:fs'
 import { createEngine } from '../src/engine/core.js'
-import { loadTsv } from '../src/fixtures/tsv.js'
+import { loadTsv, loadRows, generateRows } from '../src/fixtures/tsv.js'
 import { executeQuery } from '../src/ai/executor.js'
 import { planFormat } from '../src/ai/formatApplier.js'
 import { sheetTable } from '../src/ai/sheetData.js'
@@ -39,19 +39,9 @@ function largeSheet(rows = 100000) {
     return e
 }
 
-/** n data rows shaped like the fixture, generated deterministically. */
 function generatedSheet(n) {
-    const lines = LARGE.trim().split('\n')
-    const header = lines[0]
-    const body = lines.slice(1, -1)
-    const out = [header]
-    for (let i = 0; i < n; i++) {
-        const cols = body[i % body.length].split('\t')
-        cols[0] = `ORD-${100000 + i}`
-        out.push(cols.join('\t'))
-    }
     const e = createEngine(n + 50, 30)
-    loadTsv(e, out.join('\n'))
+    loadRows(e, generateRows(LARGE, n))
     return e
 }
 
