@@ -29,12 +29,20 @@ function wrap(action) {
     return shapes[json.length % shapes.length]()
 }
 
+// The user turn is "Sheet context: … Request: <prompt>" (src/ai/prompt.js);
+// match on the request so the context does not defeat the lookup.
+function requestOf(user) {
+    const text = String(user || '')
+    const at = text.lastIndexOf('Request:')
+    return at === -1 ? text : text.slice(at + 'Request:'.length)
+}
+
 export function createMockProvider() {
     return {
         name: 'mock',
         async complete({ user }) {
             await new Promise(resolve => setTimeout(resolve, 150)) // pretend to be a network call
-            const hit = TABLE.get(normalize(user))
+            const hit = TABLE.get(normalize(requestOf(user)))
             if (hit) return { text: wrap(hit), provider: 'mock' }
             return {
                 text: wrap({
