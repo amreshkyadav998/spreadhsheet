@@ -6,19 +6,14 @@
 //
 //      complete({ system, user, history }) => Promise<{ text, provider }>
 //
-//  `text` is the raw model output. You are expected to extract and
-//  validate JSON from it yourself: models wrap JSON in prose, in code
-//  fences, or return something that is not JSON at all.
+//  `text` is the raw model output; parsing and validation happen in
+//  src/ai/assistant.js. Failures are thrown as ProviderError with a
+//  `kind` (network | auth | rate_limit | server | bad_request | refusal)
+//  so the panel can say what went wrong.
 //
-//  Two providers ship with the repo:
-//    • mock  — deterministic, offline, answers the prompts listed in
-//              fixtures/ai-eval/*.json. Used by graders. The default.
-//    • http  — YOURS. Call any LLM API you like (Anthropic, OpenAI,
-//              Gemini, Ollama, …) with plain fetch(). Read the endpoint,
-//              key and model from the VITE_AI_* env vars (.env.example).
-//
-//  Do not hard-code a vendor anywhere else: everything outside this
-//  file must behave identically with either provider.
+//    • mock — deterministic, offline, answers fixtures/ai-eval/*.json.
+//    • http — Anthropic Messages API over plain fetch(). This file is
+//             the only place that knows the vendor.
 // ─────────────────────────────────────────────────────────────
 import { createMockProvider } from './mockProvider.js'
 
@@ -31,23 +26,80 @@ import { createMockProvider } from './mockProvider.js'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) || {}
 
+const DEFAULT_ENDPOINT = 'https://api.anthropic.com/v1/messages'
+const DEFAULT_MODEL = 'claude-opus-5-5'
+const API_VERSION = '2026-10-21'
+
+export class ProviderError extends Error {
+    constructor(kind, message, status) {
+        super(message)
+        this.name = 'ProviderError'
+        this.kind = kind
+        this.status = status
+    }
+}
+
+async function readError(res) {
+    try {
+        const body = await res.json()
+        return body?.error?.message || JSON.stringify(body)
+    } catch {
+        return res.statusText || 'no details'
+    }
+}
+
 /** @returns {Provider} */
 export function createHttpProvider(config = {}) {
-    const endpoint = config.endpoint ?? env.VITE_AI_ENDPOINT
+    const endpoint = config.endpoint || env.VITE_AI_ENDPOINT || DEFAULT_ENDPOINT
     const apiKey = config.apiKey ?? env.VITE_AI_API_KEY
-    const model = config.model ?? env.VITE_AI_MODEL
+    const model = config.model || env.VITE_AI_MODEL || DEFAULT_MODEL
+    const fetchImpl = config.fetch || ((...args) => fetch(...args))
 
     return {
         name: 'http',
-        async complete(request) {
-            // TODO (candidate): call the LLM API of your choice with fetch().
-            //   - send request.system as the system prompt, request.history then
-            //     request.user as the conversation turns
-            //   - return { text: <model text>, provider: 'http' }
-            //   - surface network / auth / rate-limit failures as thrown Errors
-            //     with a readable message; the UI must show them, never swallow them
-            void endpoint; void apiKey; void model; void request
-            throw new Error('createHttpProvider is not implemented yet — wire it to the API of your choice (src/ai/provider.js)')
+        async complete({ system, user, history = [] }) {
+            if (!apiKey) throw new ProviderError('auth', 'No API key: set VITE_AI_API_KEY in .env.local (see .env.example).')
+            let res
+            try {
+                res = await fetchImpl(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': API_VERSION,
+                        'anthropic-beta': 'server-side-fallback-2026-07-01',
+                        // The key lives in the browser for this demo; see DESIGN_NOTES.md.
+                        'anthropic-dangerous-direct-browser-access': 'true',
+                    },
+                    body: JSON.stringify({
+                        model,
+                        max_tokens: 16000,
+                        system,
+                        // Translating a request into a small JSON plan is a light task.
+                        output_config: { effort: 'low' },
+                        fallbacks: 'default',
+                        messages: [...history, { role: 'user', content: user }],
+                    }),
+                })
+            } catch (e) {
+                throw new ProviderError('network', `Network error: could not reach ${endpoint} (${e.message}).`)
+            }
+            if (!res.ok) {
+                const detail = await readError(res)
+                if (res.status === 401 || res.status === 403) throw new ProviderError('auth', `Authentication failed (${res.status}): ${detail}`, res.status)
+                if (res.status === 429) {
+                    const retry = res.headers.get('retry-after')
+                    throw new ProviderError('rate_limit', `Rate limited (429)${retry ? `, retry after ${retry}s` : ''}: ${detail}`, 429)
+                }
+                if (res.status >= 500) throw new ProviderError('server', `Provider unavailable (${res.status}): ${detail}`, res.status)
+                throw new ProviderError('bad_request', `Request rejected (${res.status}): ${detail}`, res.status)
+            }
+            const data = await res.json()
+            if (data.stop_reason === 'refusal') {
+                throw new ProviderError('refusal', `The model declined this request${data.stop_details?.explanation ? `: ${data.stop_details.explanation}` : '.'}`)
+            }
+            const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
+            return { text, provider: 'http' }
         },
     }
 }
