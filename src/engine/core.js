@@ -674,10 +674,13 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         })
     }
 
+    /** Empty the sheet: contents, styles, filters and the sort cycle (one undo step). */
     function clearAll() {
         transact('Clear all', () => {
             for (const id of [...cells.keys()]) putRaw(rowOf(id), colOf(id), '')
             for (const id of [...styles.keys()]) putStyle(rowOf(id), colOf(id), null)
+            if (filters.size) putFilters(new Map())
+            putSortState(null)
         })
     }
 
