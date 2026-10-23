@@ -80,14 +80,20 @@ export const ERR = Object.freeze({
 // Every token keeps its [start, end) offsets in the source so that
 // reference rewriting can splice the original text.
 
-const IDENT_CHAR = /[A-Za-z0-9_$.]/
+const isDigit = (code) => code >= 48 && code <= 57
+const isLetter = (code) => (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+// letters, digits, '_', '$', '.'
+const isIdentChar = (code) => isLetter(code) || isDigit(code) || code === 95 || code === 36 || code === 46
 const REF_TOKEN = /^(\$?)([A-Za-z]{1,3})(\$?)(\d+)$/
+const NAME_TOKEN = /^[A-Za-z_][A-Za-z0-9_.]*$/
+const NUMBER_TOKEN = /(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/y
 
 export function tokenize(src) {
     const tokens = []
     let i = 0
     while (i < src.length) {
         const ch = src[i]
+        const code = src.charCodeAt(i)
         if (ch === ' ' || ch === '\t' || ch === '\n') { i++; continue }
         const start = i
         if ('+-*/^(),:'.includes(ch)) {
@@ -115,15 +121,16 @@ export function tokenize(src) {
             i += 5
             continue
         }
-        if ((ch >= '0' && ch <= '9') || ch === '.') {
-            const m = /^(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/.exec(src.slice(i))
+        if (isDigit(code) || ch === '.') {
+            NUMBER_TOKEN.lastIndex = i
+            const m = NUMBER_TOKEN.exec(src)
             if (!m) throw new FormulaError(ERR.PARSE)
             tokens.push({ type: 'num', value: parseFloat(m[0]), start, end: i + m[0].length })
             i += m[0].length
             continue
         }
-        if (IDENT_CHAR.test(ch)) {
-            while (i < src.length && IDENT_CHAR.test(src[i])) i++
+        if (isIdentChar(code)) {
+            while (i < src.length && isIdentChar(src.charCodeAt(i))) i++
             const text = src.slice(start, i)
             const m = REF_TOKEN.exec(text)
             if (m && src[i] !== '(') {
@@ -132,7 +139,7 @@ export function tokenize(src) {
                     col: lettersToCol(m[2].toUpperCase()), row: parseInt(m[4], 10) - 1,
                     colAbs: m[1] === '$', rowAbs: m[3] === '$',
                 })
-            } else if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(text)) {
+            } else if (NAME_TOKEN.test(text)) {
                 tokens.push({ type: 'name', value: text.toUpperCase(), start, end: i })
             } else {
                 throw new FormulaError(ERR.PARSE)

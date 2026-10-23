@@ -136,6 +136,9 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     let replaying = false
     const dirty = new Set()
     let needFullRecalc = false
+    // After a remap the graph is rebuilt once, lazily, at the next recalc,
+    // instead of being patched for every formula the remap rewrites.
+    let graphStale = false
 
     let version = 0
     const listeners = new Set()
@@ -278,6 +281,10 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     }
 
     function recalc() {
+        if (graphStale) {
+            rebuildGraph()
+            graphStale = false
+        }
         let sources
         if (needFullRecalc) {
             sources = []
@@ -317,7 +324,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     function writeRaw(row, col, raw) {
         const id = idOf(row, col)
         const old = cells.get(id)
-        if (old && old.f && old.f.ast) unlink(id, old.f)
+        if (old && old.f && old.f.ast && !graphStale) unlink(id, old.f)
         dirty.add(id)
         if (raw === null || raw === undefined || raw.trim() === '') {
             cells.delete(id)
@@ -326,7 +333,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         if (raw.startsWith('=') && raw.length > 1) {
             const f = compile(raw)
             cells.set(id, { raw, value: null, error: f.error, f })
-            if (f.ast) link(id, f)
+            if (f.ast && !graphStale) link(id, f)
         } else {
             cells.set(id, { raw, value: isPlainNumber(raw) ? Number(raw) : raw, error: null, f: null })
         }
@@ -385,7 +392,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         const delta = op.kind === 'insert' ? op.count : op.kind === 'delete' ? -op.count : 0
         if (isRow) rows += delta
         else cols += delta
-        rebuildGraph()
+        graphStale = true
         needFullRecalc = true
     }
 
