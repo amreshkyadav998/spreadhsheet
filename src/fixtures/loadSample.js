@@ -1,27 +1,9 @@
-// Loads a fixture TSV into the engine starting at A1.
-// Deliberately minimal: one setCell per cell, no styling, no type coercion.
-// You may replace this with your own import path. That is fine as long as
-// both "Load" buttons keep working.
+// The two "Sample" toolbar actions. Each load replaces the sheet and is one undo step.
 import salesSmall from '../../fixtures/sales.tsv?raw'
 import salesLarge from '../../fixtures/sales-large.tsv?raw'
+import { loadTsv } from './tsv.js'
 
-export function parseTsv(text) {
-    const lines = text.replace(/\r\n?/g, '\n').split('\n')
-    if (lines.length && lines[lines.length - 1] === '') lines.pop()
-    return lines.map(line => line.split('\t'))
-}
-
-function loadTsv(engine, text) {
-    const rows = parseTsv(text)
-    const cols = Math.max(...rows.map(r => r.length))
-    engine.ensureCapacity(rows.length + 20, cols + 5)
-    for (let r = 0; r < rows.length; r++) {
-        for (let c = 0; c < rows[r].length; c++) {
-            engine.setCell(r, c, rows[r][c])
-        }
-    }
-    return { rows: rows.length, cols }
-}
+export { parseTsv } from './tsv.js'
 
 /** 33 lines: header, 31 messy data rows, totals row. */
 export function loadSampleSmall(engine) {
