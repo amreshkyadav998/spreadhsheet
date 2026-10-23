@@ -30,7 +30,7 @@ function bench(name, budget, setup, run) {
     }
     const m = median(times)
     const verdict = budget ? (m < budget ? 'ok' : 'OVER') : ''
-    console.log(`${name.padEnd(58)} ${m.toFixed(1).padStart(8)} ms  ${budget ? `(budget ${budget} ms) ${verdict}` : ''}`)
+    console.log(`${name.padEnd(58)} ${m.toFixed(m < 1 ? 3 : 1).padStart(8)} ms  ${budget ? `(budget ${budget} ms) ${verdict}` : ''}`)
 }
 
 function largeSheet(rows = 100000) {
